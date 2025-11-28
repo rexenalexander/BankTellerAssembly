@@ -1,0 +1,283 @@
+#############################################
+# SIMPLE BANK TELLER WITH TRANSACTION LOG
+#############################################
+
+.data
+enterPINText:      .asciiz "Enter PIN: "
+pinErrorText:      .asciiz "Incorrect PIN. Try again.\n"
+tooManyText:       .asciiz "We cannot process your request.\n"
+
+menuText:          .asciiz "\n1. Deposit\n2. Withdraw\n3. Balance\n4. View Transactions\n5. Exit\nSelect: "
+
+enterAmountText:   .asciiz "Enter amount: "
+balanceText:       .asciiz "Current balance: "
+newline:           .asciiz "\n"
+invalidChoiceText:  .asciiz "Invalid choice. Try again.\n"
+
+txHeaderText:      .asciiz "\n--- Transaction History ---\n"
+txTypeDeposit:     .asciiz "Deposit: "
+txTypeWithdraw:    .asciiz "Withdraw: "
+txTimeText:        .asciiz "  Time(ms): "
+
+zeroNotAllowed:   .asciiz "Amount cannot be zero.\n"
+notEnoughText:    .asciiz "Insufficient balance.\n"
+
+anotherTransText:  .asciiz "Make another transaction? (y/n): "
+
+.align 2
+txType:    .word 0:20
+txAmount:  .word 0:20
+txTime:    .word 0:20
+
+
+.text
+.globl main
+
+main:
+
+    jal AuthenticatePIN
+    beq $v0, $zero, ExitProgram
+
+    addi $s0, $zero, 0
+    addi $s1, $zero, 0
+
+MainMenu:
+
+    li $v0, 4
+    la $a0, menuText
+    syscall
+
+    li $v0, 5
+    syscall
+    move $t0, $v0
+
+    beq $t0, 1, DoDeposit
+    beq $t0, 2, DoWithdraw
+    beq $t0, 3, ShowBalance
+    beq $t0, 4, ViewTransactions
+    beq $t0, 5, ExitProgram
+
+    # Invalid choice
+    li $v0, 4
+    la $a0, invalidChoiceText
+    syscall
+    j MainMenu
+
+StoreTransaction:
+    li $t0, 20
+    bge $s1, $t0, StoreDone
+
+    sll $t1, $s1, 2
+
+    la $t2, txType
+    add $t2, $t2, $t1
+    sw $a0, 0($t2)
+
+    la $t3, txAmount
+    add $t3, $t3, $t1
+    sw $a1, 0($t3)
+
+    li $v0, 30
+    syscall
+
+    la $t4, txTime
+    add $t4, $t4, $t1
+    sw $a0, 0($t4)
+
+    addi $s1, $s1, 1
+
+StoreDone:
+    jr $ra
+
+DoDeposit:
+
+    li $v0, 4
+    la $a0, enterAmountText
+    syscall
+
+    li $v0, 5
+    syscall
+    move $t1, $v0
+
+    add $s0, $s0, $t1
+
+    addi $a0, $zero, 1
+    move $a1, $t1
+    jal StoreTransaction
+
+    AskAnotherDeposit:
+    li $v0, 4
+    la $a0, anotherTransText
+    syscall
+
+    li $v0, 12
+    syscall
+    move $t2, $v0
+
+    li $t3, 121     # ASCII 'y'
+    beq $t2, $t3, MainMenu
+    li $t3, 89      # ASCII 'Y'
+    beq $t2, $t3, MainMenu
+
+    j ExitProgram
+
+DoWithdraw:
+
+    li $v0, 4
+    la $a0, enterAmountText
+    syscall
+
+    li $v0, 5
+    syscall
+    move $t1, $v0
+
+    beq $t1, $zero, WithdrawZeroCheck
+
+    blt $s0, $t1, WithdrawInsufficient
+
+    sub $s0, $s0, $t1
+
+    addi $a0, $zero, 2
+    move $a1, $t1
+    jal StoreTransaction
+
+    AskAnotherWithdraw:
+    li $v0, 4
+    la $a0, anotherTransText
+    syscall
+
+    li $v0, 12
+    syscall
+    move $t2, $v0
+
+    li $t3, 121     # 'y'
+    beq $t2, $t3, MainMenu
+    li $t3, 89      # 'Y'
+    beq $t2, $t3, MainMenu
+
+    j ExitProgram
+
+WithdrawZeroCheck:
+    li $v0, 4
+    la $a0, zeroNotAllowed
+    syscall
+    j MainMenu
+
+WithdrawInsufficient:
+    li $v0, 4
+    la $a0, notEnoughText
+    syscall
+    j MainMenu
+
+ShowBalance:
+
+    li $v0, 4
+    la $a0, balanceText
+    syscall
+
+    move $a0, $s0
+    li $v0, 1
+    syscall
+
+    li $v0, 4
+    la $a0, newline
+    syscall
+
+    j MainMenu
+
+ViewTransactions:
+
+    li $v0, 4
+    la $a0, txHeaderText
+    syscall
+
+    addi $t0, $zero, 0   # i = 0
+
+TxLoop:
+    bge $t0, $s1, TxDone
+
+    sll $t1, $t0, 2
+
+    la $t2, txType
+    add $t2, $t2, $t1
+    lw $t3, 0($t2)
+
+    la $t4, txAmount
+    add $t4, $t4, $t1
+    lw $t5, 0($t4)
+
+    la $t6, txTime
+    add $t6, $t6, $t1
+    lw $t7, 0($t6)
+
+    li $v0, 4
+    beq $t3, 1, TxPrintDeposit
+    la $a0, txTypeWithdraw
+    j TxPrintType
+
+TxPrintDeposit:
+    la $a0, txTypeDeposit
+
+TxPrintType:
+    syscall
+
+    move $a0, $t5
+    li $v0, 1
+    syscall
+
+    li $v0, 4
+    la $a0, txTimeText
+    syscall
+
+    move $a0, $t7
+    li $v0, 1
+    syscall
+
+    li $v0, 4
+    la $a0, newline
+    syscall
+
+    addi $t0, $t0, 1
+    j TxLoop
+
+TxDone:
+    j MainMenu
+
+AuthenticatePIN:
+
+    li $t0, 123456
+    li $t1, 0
+
+PinLoop:
+    li $v0, 4
+    la $a0, enterPINText
+    syscall
+
+    li $v0, 5
+    syscall
+    move $t2, $v0
+
+    beq $t2, $t0, PinOK
+
+    li $v0, 4
+    la $a0, pinErrorText
+    syscall
+
+    addi $t1, $t1, 1
+    li $t3, 3
+    blt $t1, $t3, PinLoop
+
+    li $v0, 4
+    la $a0, tooManyText
+    syscall
+
+    li $v0, 0
+    jr $ra
+
+PinOK:
+    li $v0, 1
+    jr $ra
+
+ExitProgram:
+    li $v0, 10
+    syscall
